@@ -16,15 +16,13 @@ class BoardState:
 
     def __repr__(self):
         card_names = [card.__name__ if isinstance(card, type) else card.__class__.__name__ for card in self.cards]
+
         return f"BoardState(black={self.black}, redgreen={self.redgreen}, blue={self.blue}, landdrops={self.landdrops}, cards={card_names}, bargain={self.bargain}, win={self.win})"
 
 class Card:
     color = None
     def __init__(self):
         pass
-
-    def __str__(self):
-        return self.__class__.__name__
 
 class DarkRitual(Card):
     color = 'black'
@@ -69,10 +67,7 @@ class GemstoneMine(Card):
 class Valakut(Card):
     color = 'redgreen'
     def act(state):
-        out = []
-        if state.landdrops > 0:
-            out += [dataclasses.replace(state, redgreen=state.redgreen+1, landdrops=state.landdrops-1)]
-        return out
+        return []
 
 class WildCantor(Card):
     color = 'redgreen'
@@ -98,7 +93,6 @@ class SummonersPact(Card):
 
         return out
 
-
 class ChromeMox(Card):
     def act(state):
         out = []
@@ -119,27 +113,44 @@ class Necro(Card):
     def act(state):
         out = []
         if state.black > 2:
-            out += [dataclasses.replace(state, black=state.black-3, bargain=state.bargain-1, win=True)]
+            out += [dataclasses.replace(state, black=state.black-3, win=True)]
         return out
 
 class Beseech(Card):
     color = 'black'
     def act(state):
-        out = []
-        if state.bargain < 1:
-            return out
-        
-        if state.black > 3:
+        out = []        
+
+        # With bargain lines
+        if state.bargain > 0 and state.black > 3:
             out += [dataclasses.replace(state, black=state.black-4, bargain=state.bargain-1, win=True)]
-        if (state.black > 2 and state.redgreen > 0):
+        if state.bargain > 0 and state.black > 2 and state.redgreen > 0:
             out += [dataclasses.replace(state, black=state.black-3, redgreen=state.redgreen-1, bargain=state.bargain-1, win=True)]
+        if state.bargain > 0 and state.black > 2 and state.blue > 0:
+            out += [dataclasses.replace(state, black=state.black-3, redgreen=state.blue-1, bargain=state.bargain-1, win=True)]
+
+        # Without bargain lines
+        if state.black > 6:
+            out += [dataclasses.replace(state, black=state.black-7, win=True)]
+        if state.black > 5 and state.redgreen > 0:
+            out += [dataclasses.replace(state, black=state.black-6, redgreen=state.redgreen-1, win=True)]
+        if state.black > 5 and state.blue > 0:
+            out += [dataclasses.replace(state, black=state.black-6, blue=state.blue-1, win=True)]
 
         return out
 
 class Manamorphose(Card):
     color = 'redgreen'
     def act(state):
-        return []
+        out = []
+        if state.redgreen > 0 and state.black > 0:
+            out += [dataclasses.replace(state, redgreen=state.redgreen-1, black=state.black+1)]
+        if state.redgreen > 1 and state.blue > 0:
+            out += [dataclasses.replace(state, redgreen=state.redgreen-1, blue=state.blue-1, black=state.black+2)]
+        if state.redgreen > 1:
+            out += [dataclasses.replace(state, redgreen=state.redgreen-2, black=state.black+2)]
+
+        return out
 
 class Borne(Card):
     color = 'blue'
@@ -222,8 +233,7 @@ random.shuffle(deck)
 
 state = BoardState(cards=deck[:7])
 
-winning_states = []
-def recurse(state):
+def recurse(state, winning_states):
     if state.win:
         winning_states.append(state)
         return
@@ -234,32 +244,36 @@ def recurse(state):
         new_states = state.cards[i].act(new_state)
 
         for new_state in new_states:
-            recurse(new_state)
+            recurse(new_state, winning_states)
 
-recurse(state)
-
-n = 10000
+n = 100000
 win_rates = [0,0,0,0,0,0,0]
 
 for _ in range(n):
     random.shuffle(deck)
     state = BoardState(cards=deck[:7])
-    # print(state)
     winning_states = []
-    recurse(state)
+    recurse(state, winning_states)
+
+    if len(winning_states) == 0:
+        continue
+
     cards_left = 0
     for winning_state in winning_states:
         cards_left = max(cards_left, len(winning_state.cards))
 
-    # print(cards_left)
-    cards_used = 7 - cards_left
+    # if len(winning_states) == 0:
+    #     print("Does not win")
+    # else:
+    #     print("Wins with", cards_left, "cards left")
+        
+    
+    cards_used = 6 - cards_left
     for i in range(cards_used, 7):
         win_rates[i] += 1
-    # print(win_rates)
-    # print('\n')
+
 
 p_win = [win_rate/n for win_rate in win_rates]
-print(p_win)
 
 p_win_total = \
     p_win[6] + \
@@ -270,10 +284,13 @@ p_win_total = \
     (1-p_win[6])*(1-p_win[5])*(1-p_win[4])*(1-p_win[3])*(1-p_win[2])*p_win[1] + \
     (1-p_win[6])*(1-p_win[5])*(1-p_win[4])*(1-p_win[3])*(1-p_win[2])*(1-p_win[1])*p_win[0]
 
+print("Win rates:")
+print("1 card:", p_win[0])
+print("2 cards:", p_win[1])
+print("3 cards:", p_win[2])
+print("4 cards:", p_win[3])
+print("5 cards:", p_win[4])
+print("6 cards:", p_win[5])
+print("7 cards:", p_win[6])
+print("Total win rate:")
 print(p_win_total)
-
-
-
-
-
-
