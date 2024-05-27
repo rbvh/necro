@@ -106,6 +106,8 @@ class ChromeMox(Card):
                 if state.cards[i].color == 'blue':
                     out.append(dataclasses.replace(state, blue=state.blue+1, cards=new_cards))
 
+        out.append(dataclasses.replace(state, landdrops=state.bargain+1))
+
         return out
     
 class Necro(Card):
