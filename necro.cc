@@ -6,12 +6,17 @@
 #include <sstream>
 #include <random>
 #include <unordered_map>
+#include <unordered_set>
 #include <algorithm>
 #include <thread>
 #include <mutex>
 #include <atomic>
+#include <queue>
 
 using namespace std;
+
+bool CANTOR_IN_DECK = false;
+bool GOOSE_IN_DECK = false;
 
 struct BoardState;
 
@@ -27,6 +32,7 @@ struct Card {
     virtual ~Card() = default;
 };
 
+// Ensure the BoardState class has the appropriate operator== and sortHand method as before
 struct BoardState {
     int black = 0;
     int redgreen = 0;
@@ -47,6 +53,7 @@ struct BoardState {
         for (const auto& card : other.hand) {
             hand.push_back(card->clone());
         }
+        sortHand();
     }
 
     BoardState& operator=(const BoardState& other) {
@@ -63,10 +70,17 @@ struct BoardState {
         for (const auto& card : other.hand) {
             hand.push_back(card->clone());
         }
+        sortHand();
         return *this;
     }
 
     BoardState() = default;
+
+    void sortHand() {
+        sort(hand.begin(), hand.end(), [](const unique_ptr<Card>& a, const unique_ptr<Card>& b) {
+            return a->name < b->name;
+        });
+    }
 
     void print() const {
         cout << "BoardState(black=" << black
@@ -82,6 +96,36 @@ struct BoardState {
         cout << "])" << endl;
     }
 
+    bool operator==(const BoardState& other) const {
+        if (black != other.black || redgreen != other.redgreen || blue != other.blue || landdrop != other.landdrop || bargain != other.bargain || win != other.win) {
+            return false;
+        }
+        if (hand.size() != other.hand.size()) {
+            return false;
+        }
+        for (size_t i = 0; i < hand.size(); ++i) {
+            if (hand[i]->name != other.hand[i]->name) {
+                return false;
+            }
+        }
+        return true;
+    }
+};
+
+struct BoardStateHash {
+    size_t operator()(const BoardState& state) const {
+        size_t res = 17;
+        res = res * 31 + hash<int>()(state.black);
+        res = res * 31 + hash<int>()(state.redgreen);
+        res = res * 31 + hash<int>()(state.blue);
+        res = res * 31 + hash<bool>()(state.landdrop);
+        res = res * 31 + hash<bool>()(state.bargain);
+        res = res * 31 + hash<bool>()(state.win);
+        for (const auto& card : state.hand) {
+            res = res * 31 + hash<string>()(card->name);
+        }
+        return res;
+    }
 };
 
 // -------------------------------------------------------------------
@@ -183,6 +227,28 @@ struct VaultOfWhispers : Card {
     }
 };
 
+struct TreeOfTales : Card {
+    TreeOfTales() { name = "TreeOfTales"; color = ""; }
+
+    vector<BoardState> act(const BoardState& state) override {
+        vector<BoardState> result;
+
+        if (state.landdrop) {
+            BoardState new_state = state;
+            new_state.landdrop = false;
+            new_state.redgreen += 1;
+            new_state.bargain = true;
+            result.push_back(new_state);
+        }
+
+        return result;
+    }
+
+    unique_ptr<Card> clone() const override {
+        return make_unique<TreeOfTales>(*this);
+    }
+};
+
 struct GemstoneMine : Card {
     GemstoneMine() { name = "GemstoneMine"; color = ""; }
 
@@ -264,6 +330,27 @@ struct WildCantor : Card {
 
     unique_ptr<Card> clone() const override {
         return make_unique<WildCantor>(*this);
+    }
+};
+
+struct Goose : Card {
+    Goose() { name = "Goose"; color = "redgreen"; }
+
+    vector<BoardState> act(const BoardState& state) override {
+        vector<BoardState> result;
+
+        if (state.redgreen >= 1) {
+            BoardState new_state = state;
+            new_state.redgreen -= 1;
+            new_state.bargain = true;
+            result.push_back(new_state);
+        }
+
+        return result;
+    }
+
+    unique_ptr<Card> clone() const override {
+        return make_unique<Goose>(*this);
     }
 };
 
@@ -349,10 +436,17 @@ struct SummonersPact : Card {
             result.push_back(new_state);
         }
 
-        if (state.redgreen >= 1) {
+        if (state.redgreen >= 1 && CANTOR_IN_DECK) {
             BoardState new_state = state;
             new_state.redgreen -= 1;
             new_state.black += 1;
+            result.push_back(new_state);
+        }
+
+        if (state.redgreen >= 1 && GOOSE_IN_DECK) {
+            BoardState new_state = state;
+            new_state.redgreen -= 1;
+            new_state.bargain = true;
             result.push_back(new_state);
         }
 
@@ -442,6 +536,27 @@ struct Beseech : Card {
 
     unique_ptr<Card> clone() const override {
         return make_unique<Beseech>(*this);
+    }
+};
+
+struct Necrologia : Card {
+    Necrologia() { name = "Necrologia"; color = "black"; }
+
+    vector<BoardState> act(const BoardState& state) override {
+        vector<BoardState> result;
+
+        if (state.black >= 5) {
+            BoardState new_state = state;
+            new_state.black -= 5;
+            new_state.win = true;
+            result.push_back(new_state);
+        }
+
+        return result;
+    }
+
+    unique_ptr<Card> clone() const override {
+        return make_unique<Necrologia>(*this);
     }
 };
 
@@ -549,25 +664,34 @@ void recurse(const BoardState& state, vector<BoardState> &winning_states) {
 }
 
 unique_ptr<Card> createCard(const string& name) {
-    cout << name << endl;
     if (name == "DarkRitual") return make_unique<DarkRitual>();
     if (name == "CabalRitual") return make_unique<CabalRitual>();
     if (name == "SpiritGuide") return make_unique<SpiritGuide>();
     if (name == "VaultOfWhispers") return make_unique<VaultOfWhispers>();
+    if (name == "TreeOfTales") return make_unique<TreeOfTales>();
     if (name == "GemstoneMine") return make_unique<GemstoneMine>();
     if (name == "Boseiju") return make_unique<Boseiju>();
     if (name == "Valakut") return make_unique<Valakut>();
-    if (name == "WildCantor") return make_unique<WildCantor>();
     if (name == "LotusPetal") return make_unique<LotusPetal>();
     if (name == "ChromeMox") return make_unique<ChromeMox>();
     if (name == "SummonersPact") return make_unique<SummonersPact>();
     if (name == "Necro") return make_unique<Necro>();
     if (name == "Beseech") return make_unique<Beseech>();
+    if (name == "Necrologia") return make_unique<Necrologia>();
     if (name == "Manamorphose") return make_unique<Manamorphose>();
     if (name == "Borne") return make_unique<Borne>();
     if (name == "PactOfNegation") return make_unique<PactOfNegation>();
     if (name == "Tendrils") return make_unique<Tendrils>();
 
+    if (name == "WildCantor") {
+        CANTOR_IN_DECK = true;
+        return make_unique<WildCantor>();
+    }
+    if (name == "Goose") {
+        GOOSE_IN_DECK = true;
+        return make_unique<Goose>();
+    }
+    
     return nullptr;
 }
 
@@ -593,6 +717,45 @@ vector<unique_ptr<Card>> readDeckFromFile(const string& filename) {
     return deck;
 }
 
+void bfs(const BoardState& initial_state, vector<BoardState> &winning_states) {
+    queue<BoardState> q;
+    unordered_set<BoardState, BoardStateHash> visited;
+
+    q.push(initial_state);
+    visited.insert(initial_state);
+
+    while (!q.empty()) {
+        BoardState state = q.front();
+        q.pop();
+
+        if (state.win) {
+            winning_states.push_back(state);
+            continue;
+        }
+
+        for (int i = 0; i < state.hand.size(); i++) {
+            BoardState new_state = state;
+            new_state.hand.clear();  
+
+            for (int j = 0; j < state.hand.size(); j++) {
+                if (j != i) {
+                    new_state.hand.push_back(state.hand[j]->clone());
+                }
+            }
+
+            auto new_states = state.hand[i]->act(new_state);
+
+            for (auto& next_state : new_states) {
+                next_state.sortHand(); // Ensure hand is sorted for each new state
+                if (visited.find(next_state) == visited.end()) {
+                    visited.insert(next_state);
+                    q.push(next_state);
+                }
+            }
+        }
+    }
+}
+
 void processChunk(int n, const vector<unique_ptr<Card>>& deck, vector<long>& win_counts, mutex& mtx) {
     random_device rd;
     mt19937 generator(rd());
@@ -610,11 +773,12 @@ void processChunk(int n, const vector<unique_ptr<Card>>& deck, vector<long>& win
         }
 
         BoardState state;
-        state.hand = move(hand);
+        state.hand = std::move(hand);
+        state.sortHand();
 
         vector<BoardState> winning_states;
 
-        recurse(state, winning_states);
+        bfs(state, winning_states);
 
         if (winning_states.empty()) {
             continue;
@@ -638,9 +802,10 @@ void processChunk(int n, const vector<unique_ptr<Card>>& deck, vector<long>& win
         win_counts[j] += local_win_counts[j];
     }
 }
-
 int main() {
     vector<unique_ptr<Card>> deck = readDeckFromFile("decklists/test.txt");
+
+    cout << deck.size() << endl;
 
     int n = 100000;
     int num_threads = thread::hardware_concurrency(); // Get the number of supported threads
@@ -677,92 +842,37 @@ int main() {
         win_rate_errors[i] = sqrt(win_rates[i] * (1 - win_rates[i]) / n);
     }
 
-    double win_rate_total = win_rates[6] 
-                  + (1 - win_rates[6]) * win_rates[5] 
-                  + (1 - win_rates[6]) * (1 - win_rates[5]) * win_rates[4] 
-                  + (1 - win_rates[6]) * (1 - win_rates[5]) * (1 - win_rates[4]) * win_rates[3] 
-                  + (1 - win_rates[6]) * (1 - win_rates[5]) * (1 - win_rates[4]) * (1 - win_rates[3]) * win_rates[2] 
-                  + (1 - win_rates[6]) * (1 - win_rates[5]) * (1 - win_rates[4]) * (1 - win_rates[3]) * (1 - win_rates[2]) * win_rates[1] 
-                  + (1 - win_rates[6]) * (1 - win_rates[5]) * (1 - win_rates[4]) * (1 - win_rates[3]) * (1 - win_rates[2]) * (1 - win_rates[1]) * win_rates[0];
+    vector<double> win_rates_cumulative(7, 0.0);
+    win_rates_cumulative[0] = win_rates[0];
+    for (int i=1; i<7; i++) {
+        win_rates_cumulative[i] = win_rates[i] + (1 - win_rates[i]) * win_rates_cumulative[i-1];
+    }
+
+    vector<double> win_rate_partials(7, 0.0);
+    win_rate_partials[6] = 1 - win_rates_cumulative[5];
+    for (int i=5; i>=1; i--) {
+        win_rate_partials[i] = (1 - win_rates_cumulative[i-1]);
+        for (int j=i; j<6; j++) {
+            win_rate_partials[i] = win_rates[j] + (1 - win_rates[j]) * win_rate_partials[i];
+        }
+    }
+
+    double win_rate_total = win_rates_cumulative[6];
+    double win_rate_total_error = 0;
+    for (int i=0; i<7; i++) {
+        win_rate_total_error += pow(win_rate_errors[i] * win_rate_partials[i], 2);
+    }
+    win_rate_total_error = sqrt(win_rate_total_error);
 
     cout << "win_rates: " << endl;
-    cout << "1 card: " << win_rates[0] << " \pm " << win_rate_errors[0] << endl;
-    cout << "2 cards: " << win_rates[1] << " \pm " << win_rate_errors[1] << endl;
-    cout << "3 cards: " << win_rates[2] << " \pm " << win_rate_errors[2] << endl;
-    cout << "4 cards: " << win_rates[3] << " \pm " << win_rate_errors[3] << endl;
-    cout << "5 cards: " << win_rates[4] << " \pm " << win_rate_errors[4] << endl;
-    cout << "6 cards: " << win_rates[5] << " \pm " << win_rate_errors[5] << endl;
-    cout << "7 cards: " << win_rates[6] << " \pm " << win_rate_errors[6] << endl;
-    cout << "Total winrate: " << win_rate_total << endl;
+    cout << "1 card: " << 100*win_rates[0] << "% \u00B1 " << 100*win_rate_errors[0] << "%" << endl;
+    cout << "2 cards: " << 100*win_rates[1] << "% \u00B1 " << 100*win_rate_errors[1] << "%" << endl;
+    cout << "3 cards: " << 100*win_rates[2] << "% \u00B1 " << 100*win_rate_errors[2] << "%" << endl;
+    cout << "4 cards: " << 100*win_rates[3] << "% \u00B1 " << 100*win_rate_errors[3] << "%" << endl;
+    cout << "5 cards: " << 100*win_rates[4] << "% \u00B1 " << 100*win_rate_errors[4] << "%" << endl;
+    cout << "6 cards: " << 100*win_rates[5] << "% \u00B1 " << 100*win_rate_errors[5] << "%" << endl;
+    cout << "7 cards: " << 100*win_rates[6] << "% \u00B1 " << 100*win_rate_errors[6] << "%" << endl;
+    cout << "Total winrate: " << 100*win_rate_total << "% \u00B1 " << 100*win_rate_total_error << "%" << endl;
 
     return 0;
 }
-
-
-// int main() {
-//     vector<unique_ptr<Card>> deck = readDeckFromFile("decklists/test.txt");
-
-//     int n = 10000;
-
-//     random_device rd;
-//     mt19937 generator(rd());
-
-//     vector<int> indices(deck.size());
-//     iota(indices.begin(), indices.end(), 0);
-
-
-//     vector<double> win_rates(7, 0.0);
-
-//     for (int i=0; i<n; i++) {
-//         shuffle(indices.begin(), indices.end(), generator);
-
-//         vector<unique_ptr<Card>> hand;
-//         for (int j = 0; j < 7; j++) {
-//             hand.push_back(deck[indices[j]]->clone());
-//         }
-//         // for (auto& index : {4, 8, 16, 27, 9, 39, 20}) {
-//         //     hand.push_back(deck[index]->clone());
-//         // }
-
-//         BoardState state;
-//         state.hand = move(hand);
-
-//         vector<BoardState> winning_states;
-
-//         recurse(state, winning_states);
-
-//         if (winning_states.size() == 0) {
-//             continue;
-//         }
-
-//         // Count number of cards left
-//         unsigned long cards_left = 0;
-//         for (const auto& state : winning_states) {
-//             cards_left = max(state.hand.size(), cards_left);
-//         }
-
-//         int cards_used = 6 - cards_left;
-//         for (int j = cards_used; j<7; j++) {
-//             win_rates[j] += 1./(double)n;
-//         }
-//     }
-
-//     double win_rate_total = win_rates[6] 
-//                   + (1 - win_rates[6]) * win_rates[5] 
-//                   + (1 - win_rates[6]) * (1 - win_rates[5]) * win_rates[4] 
-//                   + (1 - win_rates[6]) * (1 - win_rates[5]) * (1 - win_rates[4]) * win_rates[3] 
-//                   + (1 - win_rates[6]) * (1 - win_rates[5]) * (1 - win_rates[4]) * (1 - win_rates[3]) * win_rates[2] 
-//                   + (1 - win_rates[6]) * (1 - win_rates[5]) * (1 - win_rates[4]) * (1 - win_rates[3]) * (1 - win_rates[2]) * win_rates[1] 
-//                   + (1 - win_rates[6]) * (1 - win_rates[5]) * (1 - win_rates[4]) * (1 - win_rates[3]) * (1 - win_rates[2]) * (1 - win_rates[1]) * win_rates[0];
-
-//     cout << "win_rates: " << endl;
-//     cout << "1 card: " << win_rates[0] << endl;
-//     cout << "2 cards: " << win_rates[1] << endl;
-//     cout << "3 cards: " << win_rates[2] << endl;
-//     cout << "4 cards: " << win_rates[3] << endl;
-//     cout << "5 cards: " << win_rates[4] << endl;
-//     cout << "6 cards: " << win_rates[5] << endl;
-//     cout << "7 cards: " << win_rates[6] << endl;
-//     cout << "Total winrate: " << win_rate_total << endl;
-   
-// }
