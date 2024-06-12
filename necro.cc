@@ -37,6 +37,7 @@ struct BoardState {
     int black = 0;
     int redgreen = 0;
     int blue = 0;
+    int protection = 0;
     int landdrop = true;
     vector<unique_ptr<Card>> hand;
     bool bargain = false;
@@ -46,6 +47,7 @@ struct BoardState {
             black(other.black),
             redgreen(other.redgreen),
             blue(other.blue),
+            protection(other.protection),
             landdrop(other.landdrop),
             bargain(other.bargain),
             win(other.win) {
@@ -61,6 +63,7 @@ struct BoardState {
         black = other.black;
         redgreen = other.redgreen;
         blue = other.blue;
+        protection = other.protection;
         landdrop = other.landdrop;
         bargain = other.bargain;
         win = other.win;
@@ -86,6 +89,7 @@ struct BoardState {
         cout << "BoardState(black=" << black
                 << ", redgreen=" << redgreen
                 << ", blue=" << blue
+                << ", protection=" << protection
                 << ", landdrop=" << landdrop
                 << ", bargain=" << bargain
                 << ", win=" << win
@@ -97,7 +101,7 @@ struct BoardState {
     }
 
     bool operator==(const BoardState& other) const {
-        if (black != other.black || redgreen != other.redgreen || blue != other.blue || landdrop != other.landdrop || bargain != other.bargain || win != other.win) {
+        if (black != other.black || redgreen != other.redgreen || blue != other.blue || protection != other.protection || landdrop != other.landdrop || bargain != other.bargain || win != other.win) {
             return false;
         }
         if (hand.size() != other.hand.size()) {
@@ -118,6 +122,7 @@ struct BoardStateHash {
         res = res * 31 + hash<int>()(state.black);
         res = res * 31 + hash<int>()(state.redgreen);
         res = res * 31 + hash<int>()(state.blue);
+        res = res * 31 + hash<int>()(state.protection);
         res = res * 31 + hash<bool>()(state.landdrop);
         res = res * 31 + hash<bool>()(state.bargain);
         res = res * 31 + hash<bool>()(state.win);
@@ -545,9 +550,25 @@ struct Necrologia : Card {
     vector<BoardState> act(const BoardState& state) override {
         vector<BoardState> result;
 
-        if (state.black >= 5) {
+        if (state.black >= 2 && state.black + state.redgreen + state.blue >= 5) {
             BoardState new_state = state;
-            new_state.black -= 5;
+            new_state.black -= 2;
+
+            // First spend blue, then redgreen, then black
+            int mana_spent = 0;
+            while (mana_spent < 3) {
+                if (new_state.blue >= 1) {
+                    new_state.blue -= 1;
+                    mana_spent += 1;
+                } else if (new_state.redgreen >= 1) {
+                    new_state.redgreen -= 1;
+                    mana_spent += 1;
+                } else if (new_state.black >= 1) {
+                    new_state.black -= 1;
+                    mana_spent += 1;
+                }
+            }
+
             new_state.win = true;
             result.push_back(new_state);
         }
@@ -616,11 +637,70 @@ struct PactOfNegation : Card {
     vector<BoardState> act(const BoardState& state) override {
         vector<BoardState> result;
 
+        if (true) {
+            BoardState new_state = state;
+            new_state.protection += 1;
+            result.push_back(new_state);
+        }
+
         return result;
     }
 
     unique_ptr<Card> clone() const override {
         return make_unique<PactOfNegation>(*this);
+    }
+};
+
+struct Veil : Card {
+    Veil() { name = "Veil"; color = "redgreen"; }
+
+    vector<BoardState> act(const BoardState& state) override {
+        vector<BoardState> result;
+
+        if (state.redgreen >= 1) {
+            BoardState new_state = state;
+            new_state.redgreen -= 1;
+            new_state.protection += 1;
+            result.push_back(new_state);
+        }
+
+        return result;
+    }
+
+    unique_ptr<Card> clone() const override {
+        return make_unique<Veil>(*this);
+    }
+};
+
+struct VexingBauble : Card {
+    VexingBauble() { name = "VexingBauble"; color = ""; }
+
+    vector<BoardState> act(const BoardState& state) override {
+        vector<BoardState> result;
+        if (state.black >= 1) {
+            BoardState new_state = state;
+            new_state.black -= 1;
+            new_state.bargain = true;
+            result.push_back(new_state);
+        }
+        if (state.redgreen >= 1) {
+            BoardState new_state = state;
+            new_state.redgreen -= 1;
+            new_state.bargain = true;
+            result.push_back(new_state);
+        }
+        if (state.blue >= 1) {
+            BoardState new_state = state;
+            new_state.blue -= 1;
+            new_state.bargain = true;
+            result.push_back(new_state);
+        }
+
+        return result;
+    }
+
+    unique_ptr<Card> clone() const override {
+        return make_unique<VexingBauble>(*this);
     }
 };
 
@@ -635,6 +715,20 @@ struct Tendrils : Card {
 
     unique_ptr<Card> clone() const override {
         return make_unique<Tendrils>(*this);
+    }
+};
+
+struct GaeaWill : Card {
+    GaeaWill() { name = "GaeaWill"; color = "redgreen"; }
+
+    vector<BoardState> act(const BoardState& state) override {
+        vector<BoardState> result;
+
+        return result;
+    }
+
+    unique_ptr<Card> clone() const override {
+        return make_unique<GaeaWill>(*this);
     }
 };
 
@@ -681,7 +775,10 @@ unique_ptr<Card> createCard(const string& name) {
     if (name == "Manamorphose") return make_unique<Manamorphose>();
     if (name == "Borne") return make_unique<Borne>();
     if (name == "PactOfNegation") return make_unique<PactOfNegation>();
+    if (name == "VexingBauble") return make_unique<VexingBauble>();
     if (name == "Tendrils") return make_unique<Tendrils>();
+    if (name == "Veil") return make_unique<Veil>();
+    if (name == "GaeaWill") return make_unique<GaeaWill>();
 
     if (name == "WildCantor") {
         CANTOR_IN_DECK = true;
@@ -717,7 +814,7 @@ vector<unique_ptr<Card>> readDeckFromFile(const string& filename) {
     return deck;
 }
 
-void bfs(const BoardState& initial_state, vector<BoardState> &winning_states) {
+void bfs(const BoardState& initial_state, vector<BoardState> &winning_states, vector<BoardState> &protected_winning_states) {
     queue<BoardState> q;
     unordered_set<BoardState, BoardStateHash> visited;
 
@@ -730,7 +827,10 @@ void bfs(const BoardState& initial_state, vector<BoardState> &winning_states) {
 
         if (state.win) {
             winning_states.push_back(state);
-            continue;
+            
+            if (state.protection > 0) {
+                protected_winning_states.push_back(state);
+            }
         }
 
         for (int i = 0; i < state.hand.size(); i++) {
@@ -756,13 +856,14 @@ void bfs(const BoardState& initial_state, vector<BoardState> &winning_states) {
     }
 }
 
-void processChunk(int n, const vector<unique_ptr<Card>>& deck, vector<long>& win_counts, mutex& mtx) {
+void processChunk(int n, const vector<unique_ptr<Card>>& deck, vector<long>& win_counts, vector<long>& protected_win_counts, mutex& mtx) {
     random_device rd;
     mt19937 generator(rd());
     vector<int> indices(deck.size());
     iota(indices.begin(), indices.end(), 0);
 
     vector<long> local_win_counts(7, 0.0);
+    vector<long> local_protected_win_counts(7, 0.0);
 
     for (int i = 0; i < n; i++) {
         shuffle(indices.begin(), indices.end(), generator);
@@ -777,14 +878,15 @@ void processChunk(int n, const vector<unique_ptr<Card>>& deck, vector<long>& win
         state.sortHand();
 
         vector<BoardState> winning_states;
+        vector<BoardState> protected_winning_states;
 
-        bfs(state, winning_states);
+        bfs(state, winning_states, protected_winning_states);
 
         if (winning_states.empty()) {
             continue;
         }
 
-        // Count number of cards left
+        // Count number of cards left for regular win
         unsigned long cards_left = 0;
         for (const auto& state : winning_states) {
             cards_left = max(state.hand.size(), cards_left);
@@ -794,6 +896,17 @@ void processChunk(int n, const vector<unique_ptr<Card>>& deck, vector<long>& win
         for (int j = cards_used; j < 7; j++) {
             local_win_counts[j] += 1;
         }
+
+        // Count number of cards left for protected win
+        unsigned long protected_cards_left = 0;
+        for (const auto& state : protected_winning_states) {
+            protected_cards_left = max(state.hand.size(), protected_cards_left);
+        }
+
+        int protected_cards_used = 6 - protected_cards_left;
+        for (int j = protected_cards_used; j < 7; j++) {
+            local_protected_win_counts[j] += 1;
+        }
     }
 
     // Safely update the shared win_rates vector
@@ -801,13 +914,59 @@ void processChunk(int n, const vector<unique_ptr<Card>>& deck, vector<long>& win
     for (int j = 0; j < 7; j++) {
         win_counts[j] += local_win_counts[j];
     }
+    for (int j = 0; j < 7; j++) {
+        protected_win_counts[j] += local_protected_win_counts[j];
+    }
 }
+
+void compute_win_metrics(const vector<long>& win_counts, int n, string prefix = "") {
+    vector<double> win_rates(7, 0.0);
+    vector<double> win_rate_errors(7, 0.0);
+    for (int i = 0; i < 7; i++) {
+        win_rates[i] = win_counts[i] / (double)n;
+        win_rate_errors[i] = sqrt(win_rates[i] * (1 - win_rates[i]) / n);
+    }
+
+    vector<double> win_rates_cumulative(7, 0.0);
+    win_rates_cumulative[0] = win_rates[0];
+    for (int i = 1; i < 7; i++) {
+        win_rates_cumulative[i] = win_rates[i] + (1 - win_rates[i]) * win_rates_cumulative[i - 1];
+    }
+
+    vector<double> win_rate_partials(7, 0.0);
+    win_rate_partials[6] = 1 - win_rates_cumulative[5];
+    for (int i = 5; i >= 1; i--) {
+        win_rate_partials[i] = (1 - win_rates_cumulative[i - 1]);
+        for (int j = i; j < 6; j++) {
+            win_rate_partials[i] = win_rates[j] + (1 - win_rates[j]) * win_rate_partials[i];
+        }
+    }
+
+    double win_rate_total = win_rates_cumulative[6];
+    double win_rate_total_error = 0;
+    for (int i = 0; i < 7; i++) {
+        win_rate_total_error += pow(win_rate_errors[i] * win_rate_partials[i], 2);
+    }
+    win_rate_total_error = sqrt(win_rate_total_error);
+
+    cout << prefix << endl;
+    cout << "win_rates: " << endl;
+    cout << "1 card:  " << 100*win_rates[0] << "% \u00B1 " << 100*win_rate_errors[0] << "%" << endl;
+    cout << "2 cards: " << 100*win_rates[1] << "% \u00B1 " << 100*win_rate_errors[1] << "%" << endl;
+    cout << "3 cards: " << 100*win_rates[2] << "% \u00B1 " << 100*win_rate_errors[2] << "%" << endl;
+    cout << "4 cards: " << 100*win_rates[3] << "% \u00B1 " << 100*win_rate_errors[3] << "%" << endl;
+    cout << "5 cards: " << 100*win_rates[4] << "% \u00B1 " << 100*win_rate_errors[4] << "%" << endl;
+    cout << "6 cards: " << 100*win_rates[5] << "% \u00B1 " << 100*win_rate_errors[5] << "%" << endl;
+    cout << "7 cards: " << 100*win_rates[6] << "% \u00B1 " << 100*win_rate_errors[6] << "%" << endl;
+    cout << "Total winrate: " << 100*win_rate_total << "% \u00B1 " << 100*win_rate_total_error << "%" << endl;
+}
+
 int main() {
     vector<unique_ptr<Card>> deck = readDeckFromFile("decklists/test.txt");
 
     cout << deck.size() << endl;
 
-    int n = 100000;
+    int n = 500000;
     int num_threads = thread::hardware_concurrency(); // Get the number of supported threads
 
     while(n % num_threads != 0) {
@@ -816,12 +975,13 @@ int main() {
     int chunk_size = n / num_threads;
 
     vector<long> win_counts(7, 0);
+    vector<long> protected_win_counts(7, 0);
     mutex mtx;
     vector<thread> threads;
 
     // Start threads to process chunks
     for (int i = 0; i < num_threads; ++i) {
-        threads.emplace_back(processChunk, chunk_size, ref(deck), ref(win_counts), ref(mtx));
+        threads.emplace_back(processChunk, chunk_size, ref(deck), ref(win_counts), ref(protected_win_counts), ref(mtx));
     }
 
     // Join threads
@@ -832,47 +992,11 @@ int main() {
     // Process any remaining iterations
     int remaining_iterations = n % num_threads;
     if (remaining_iterations > 0) {
-        processChunk(remaining_iterations, deck, win_counts, mtx);
+        processChunk(remaining_iterations, deck, win_counts, protected_win_counts, mtx);
     }
 
-    vector<double> win_rates(7, 0.0);
-    vector<double> win_rate_errors(7, 0.0);
-    for (int i = 0; i < 7; i++) {
-        win_rates[i] = win_counts[i] / (double)n;
-        win_rate_errors[i] = sqrt(win_rates[i] * (1 - win_rates[i]) / n);
-    }
-
-    vector<double> win_rates_cumulative(7, 0.0);
-    win_rates_cumulative[0] = win_rates[0];
-    for (int i=1; i<7; i++) {
-        win_rates_cumulative[i] = win_rates[i] + (1 - win_rates[i]) * win_rates_cumulative[i-1];
-    }
-
-    vector<double> win_rate_partials(7, 0.0);
-    win_rate_partials[6] = 1 - win_rates_cumulative[5];
-    for (int i=5; i>=1; i--) {
-        win_rate_partials[i] = (1 - win_rates_cumulative[i-1]);
-        for (int j=i; j<6; j++) {
-            win_rate_partials[i] = win_rates[j] + (1 - win_rates[j]) * win_rate_partials[i];
-        }
-    }
-
-    double win_rate_total = win_rates_cumulative[6];
-    double win_rate_total_error = 0;
-    for (int i=0; i<7; i++) {
-        win_rate_total_error += pow(win_rate_errors[i] * win_rate_partials[i], 2);
-    }
-    win_rate_total_error = sqrt(win_rate_total_error);
-
-    cout << "win_rates: " << endl;
-    cout << "1 card: " << 100*win_rates[0] << "% \u00B1 " << 100*win_rate_errors[0] << "%" << endl;
-    cout << "2 cards: " << 100*win_rates[1] << "% \u00B1 " << 100*win_rate_errors[1] << "%" << endl;
-    cout << "3 cards: " << 100*win_rates[2] << "% \u00B1 " << 100*win_rate_errors[2] << "%" << endl;
-    cout << "4 cards: " << 100*win_rates[3] << "% \u00B1 " << 100*win_rate_errors[3] << "%" << endl;
-    cout << "5 cards: " << 100*win_rates[4] << "% \u00B1 " << 100*win_rate_errors[4] << "%" << endl;
-    cout << "6 cards: " << 100*win_rates[5] << "% \u00B1 " << 100*win_rate_errors[5] << "%" << endl;
-    cout << "7 cards: " << 100*win_rates[6] << "% \u00B1 " << 100*win_rate_errors[6] << "%" << endl;
-    cout << "Total winrate: " << 100*win_rate_total << "% \u00B1 " << 100*win_rate_total_error << "%" << endl;
+    compute_win_metrics(win_counts, n, "Regular win rates:");
+    compute_win_metrics(protected_win_counts, n, "Protected win rates:");
 
     return 0;
 }
