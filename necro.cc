@@ -862,8 +862,8 @@ void processChunk(int n, const vector<unique_ptr<Card>>& deck, vector<long>& win
     vector<int> indices(deck.size());
     iota(indices.begin(), indices.end(), 0);
 
-    vector<long> local_win_counts(7, 0.0);
-    vector<long> local_protected_win_counts(7, 0.0);
+    vector<long> local_win_counts(7, 0);
+    vector<long> local_protected_win_counts(7, 0);
 
     for (int i = 0; i < n; i++) {
         shuffle(indices.begin(), indices.end(), generator);
@@ -898,14 +898,16 @@ void processChunk(int n, const vector<unique_ptr<Card>>& deck, vector<long>& win
         }
 
         // Count number of cards left for protected win
-        unsigned long protected_cards_left = 0;
-        for (const auto& state : protected_winning_states) {
-            protected_cards_left = max(state.hand.size(), protected_cards_left);
-        }
+        if (!protected_winning_states.empty()) { 
+            unsigned long protected_cards_left = 0;
+            for (const auto& state : protected_winning_states) {
+                protected_cards_left = max(state.hand.size(), protected_cards_left);
+            }
 
-        int protected_cards_used = 6 - protected_cards_left;
-        for (int j = protected_cards_used; j < 7; j++) {
-            local_protected_win_counts[j] += 1;
+            int protected_cards_used = 6 - protected_cards_left;
+            for (int j = protected_cards_used; j < 7; j++) {
+                local_protected_win_counts[j] += 1;
+            }
         }
     }
 
